@@ -1,0 +1,90 @@
+org: bookhub
+service: Book-Hub
+
+provider:
+  name: aws
+  runtime: python3.12
+  environment:
+    DB_HOST: ${env:DB_HOST}
+    DB_USER: ${env:DB_USER}
+    DB_PASSWORD: ${env:DB_PASSWORD}
+    DB_DATABASE: ${env:DB_DATABASE}
+    DB_CLUSTER_IDENTIFIER: bookhub
+    EVENT_BUS_NAME: ${env:EVENT_BUS_NAME}
+    EVENT_BUS_ARN: ${env:EVENT_BUS_ARN}
+    SNS_TOPIC_NAME: ${env:SNS_TOPIC_NAME}
+    SNS_TOPIC_ARN: ${env:SNS_TOPIC_ARN}
+
+  iam:
+    role:
+      statements:
+        - Effect: Allow
+          Action:
+            - rds-data:ExecuteStatement
+            - rds-data:BatchExecuteStatement
+          Resource: "arn:aws:rds:${aws:region}:*:cluster:${self:provider.environment.DB_CLUSTER_IDENTIFIER}"
+        - Effect: Allow
+          Action:
+            - events:PutEvents
+            - sns:CreateTopic
+            - sns:Subscribe
+            - sns:Publish
+          Resource:
+            - ${self:provider.environment.SNS_TOPIC_ARN}
+            - ${self:provider.environment.EVENT_BUS_ARN}
+
+functions:
+  Book-Hub:
+    handler: main.handler
+    timeout: 30
+    events:
+      - http:
+          path: /{proxy+}
+          method: ANY
+      - eventBridge:
+          eventBus: BookhubEventBus
+          pattern:
+            source:
+              - com.bookhub
+            detail-type:
+              - UserCreated
+              - UserUpdated
+              - UserLoggedIn
+              - PasswordReset
+              - BookAdded
+              - BookDeleted
+              - BookBorrowed
+              - BookReturned
+              - CollectionCreated
+              - CollectionDeleted
+              - ResourceAdded
+              - ResourceDeleted
+
+resources:
+  Resources:
+    BookHubNotifications:
+      Type: AWS::SNS::Topic
+      Properties:
+        TopicName: BookHubNotifications
+
+plugins:
+  - serverless-python-requirements
+  - serverless-dotenv-plugin
+
+custom:
+  pythonRequirements:
+    requirementsFile: requirements.txt
+    noDeploy:
+      - docutils
+      - jmespath
+      - pip
+      - python-dateutil
+      - setuptools
+      - six
+      - tensorboard
+
+package:
+  exclude:
+    - node_modules/**
+    - venv/**
+    - bk/**
